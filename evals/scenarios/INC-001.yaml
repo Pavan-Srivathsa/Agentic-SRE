@@ -1,0 +1,11 @@
+incident_id: INC-001
+scenario: bad-payment-deploy
+root_cause: inefficient_database_query
+root_service: payment-service
+trigger_service: api-gateway
+expected_evidence:
+  - database latency increase
+  - payment trace duration increase
+  - payment deployment preceding incident
+negative_evidence:
+  - inventory latency normal

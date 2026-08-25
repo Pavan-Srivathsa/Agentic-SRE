@@ -1,0 +1,20 @@
+[
+  {
+    "commit_sha": "abc123def456",
+    "service": "payment-service",
+    "author": "payments-team",
+    "message": "Optimize charge path with additional payment lookup join",
+    "committed_at": "2026-08-25T15:48:00Z",
+    "files_changed": ["demo/services/payments/app.py", "demo/services/payments/query.sql"],
+    "diff_summary": "Added an unindexed lookup join on payments history before insert. Increases DB time under load."
+  },
+  {
+    "commit_sha": "111aaa222bbb",
+    "service": "inventory-service",
+    "author": "inventory-team",
+    "message": "Keep reserve query on primary key",
+    "committed_at": "2026-08-24T12:00:00Z",
+    "files_changed": ["demo/services/inventory/app.py"],
+    "diff_summary": "No latency-impacting change."
+  }
+]

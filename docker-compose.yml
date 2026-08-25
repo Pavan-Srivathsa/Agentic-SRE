@@ -1,0 +1,197 @@
+services:
+  postgres-app:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: checkout
+      POSTGRES_PASSWORD: checkout
+      POSTGRES_DB: checkout
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./demo/services/app-db/init.sql:/docker-entrypoint-initdb.d/001.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U checkout -d checkout"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  postgres-investigator:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: investigator
+      POSTGRES_PASSWORD: investigator
+      POSTGRES_DB: investigator
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./investigator/storage/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U investigator -d investigator"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./demo/observability/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    depends_on:
+      - tempo
+      - loki
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=6h
+    volumes:
+      - ./demo/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./demo/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes:
+      - ./demo/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+
+  loki:
+    image: grafana/loki:3.1.1
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./demo/observability/loki.yaml:/etc/loki/loki.yaml:ro
+    ports:
+      - "3100:3100"
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./demo/observability/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "3200:3200"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANON_ENABLED: "true"
+      GF_AUTH_ANON_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./demo/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  gateway:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["uvicorn", "demo.services.gateway.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      ORDER_URL: http://orders:8001
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8000:8000"
+    depends_on:
+      orders:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  orders:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["uvicorn", "demo.services.orders.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      PAYMENT_URL: http://payments:8002
+      INVENTORY_URL: http://inventory:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8001:8001"
+    depends_on:
+      - payments
+      - inventory
+
+  payments:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["uvicorn", "demo.services.payments.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      APP_DATABASE_URL: postgresql://checkout:checkout@postgres-app:5432/checkout
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  inventory:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["uvicorn", "demo.services.inventory.app:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      APP_DATABASE_URL: postgresql://checkout:checkout@postgres-app:5432/checkout
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres-app:
+        condition: service_healthy
+
+  traffic:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["python", "demo/services/traffic/run.py"]
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      TRAFFIC_INTERVAL_SECONDS: "1"
+    depends_on:
+      - gateway
+
+  investigator-api:
+    build:
+      context: .
+      dockerfile: demo/services/Dockerfile
+    command: ["python", "-m", "investigator.api.app"]
+    environment:
+      INVESTIGATOR_DATABASE_URL: postgresql://investigator:investigator@postgres-investigator:5432/investigator
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      TEMPO_URL: http://tempo:3200
+      INVESTIGATOR_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-investigator:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+networks:
+  default:
+    name: agentic-sre

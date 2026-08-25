@@ -1,0 +1,6 @@
+{
+  "api-gateway": ["order-service"],
+  "order-service": ["payment-service", "inventory-service", "postgres"],
+  "payment-service": ["postgres"],
+  "inventory-service": ["postgres"]
+}

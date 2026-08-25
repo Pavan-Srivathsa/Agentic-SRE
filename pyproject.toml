@@ -1,0 +1,68 @@
+[project]
+name = "agentic-sre"
+version = "0.1.0"
+description = "Agentic incident diagnosis and evidence engine (Milestones 1–5: demo stack, connectors, investigator, MCP)."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2.8.0",
+    "httpx>=0.27.0",
+    "psycopg[binary]>=3.2.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "eval-type-backport>=0.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+demo = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "prometheus-client>=0.21.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp>=1.27.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-httpx>=0.48b0",
+    "opentelemetry-instrumentation-logging>=0.48b0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.0",
+    "agentic-sre[demo]",
+]
+llm = [
+    "openai>=1.40.0",
+]
+mcp = [
+    "mcp>=1.6.0; python_version>='3.10'",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["paths"]
+
+[tool.setuptools.packages.find]
+include = ["investigator*", "demo*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: requires docker compose stack",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
